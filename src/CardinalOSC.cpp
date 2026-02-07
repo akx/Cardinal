@@ -201,17 +201,22 @@ static int osc_screenshot_handler(const char*, const char* types, lo_arg** argv,
 
 void oscInitState(Initializer* const self)
 {
+#if defined(HAVE_LIBLO)
+    const char* const portEnv = std::getenv("CARDINAL_REMOTE_HOST_PORT");
 #if defined(CARDINAL_INIT_OSC_THREAD)
-    INFO("Initializing OSC Remote control");
-    const char* port;
-    if (const char* const portEnv = std::getenv("CARDINAL_REMOTE_HOST_PORT"))
-        port = portEnv;
-    else
-        port = CARDINAL_DEFAULT_REMOTE_PORT;
-    self->startRemoteServer(port);
-#elif defined(HAVE_LIBLO)
+    // When in headless mode, always boot OSC in a thread with the default port
+    // unless overridden.
+    self->startRemoteServer(portEnv != nullptr ? portEnv : CARDINAL_DEFAULT_REMOTE_PORT);
+#endif
     if (rack::isStandalone()) {
-        INFO("OSC Remote control is available on request");
+        if (portEnv != nullptr) {
+            // If the envvar is set in headful modes, start now.
+            if (!self->startRemoteServer(portEnv)) {
+                WARN("Failed to start OSC Remote control on port %s", portEnv);
+            }
+        } else {
+            INFO("OSC Remote control is available on request");
+        }
     } else {
         INFO("OSC Remote control is not available on plugin variants");
     }
@@ -237,6 +242,8 @@ bool Initializer::startRemoteServer(const char* const port)
     if (oscServerThread != nullptr)
         return true;
 
+    INFO("Starting OSC Remote control thread on %s (udp)", port);
+
     if ((oscServerThread = lo_server_thread_new_with_proto(port, LO_UDP, osc_error_handler)) == nullptr)
         return false;
 
@@ -252,6 +259,8 @@ bool Initializer::startRemoteServer(const char* const port)
    #else
     if (oscServer != nullptr)
         return true;
+
+    INFO("Starting OSC Remote control on %s (udp)", port);
 
     if ((oscServer = lo_server_new_with_proto(port, LO_UDP, osc_error_handler)) == nullptr)
         return false;
